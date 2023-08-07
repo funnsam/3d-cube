@@ -26,7 +26,7 @@ pub fn init(so: &mut BufWriter<Stdout>) -> std::result::Result<u16, Box<dyn std:
 
     let (c, r) = terminal::size()?;
 
-    Ok(c.min(r << 1))
+    Ok(c.min((r-2) << 1))
 }
 
 pub fn prep_exit() -> core::result::Result<(), Box<dyn std::error::Error>> {
@@ -39,25 +39,18 @@ pub fn prep_exit() -> core::result::Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn push_image(image: Vec<Vec<bool>>, msg: &str) -> core::result::Result<(), Box<dyn std::error::Error>> {
+pub fn push_image(image: Vec<Vec<u8>>, msg: &str) -> core::result::Result<usize, Box<dyn std::error::Error>> {
     let so = unsafe { &mut *STDOUT_BUF };
     queue!(so, cursor::MoveTo(0, 0))?;
     for y in image.chunks(2) {
         let rle = rle_row(y);
         for i in rle.into_iter() {
-            let mut c = "\u{2580}".repeat(i.n).stylize();
-            c = if i.d.0 {
-                c.with(Color::White)
-            } else {
-                c.with(Color::DarkGrey)
-            };
-            c = if i.d.1 {
-                c.on(Color::White)
-            } else {
-                c.on(Color::DarkGrey)
-            };
             queue!(so,
-                style::PrintStyledContent(c)
+                style::PrintStyledContent(
+                    "\u{2580}".repeat(i.n)
+                        .with(Color::Rgb { r: 0, g: i.d.0 / 2, b: i.d.0 })
+                        .on  (Color::Rgb { r: 0, g: i.d.1 / 2, b: i.d.1 })
+                )
             )?;
         }
 
@@ -65,23 +58,25 @@ pub fn push_image(image: Vec<Vec<bool>>, msg: &str) -> core::result::Result<(), 
     }
 
     queue!(so,
-        terminal::Clear(terminal::ClearType::CurrentLine),
+        terminal::Clear(terminal::ClearType::FromCursorDown),
         style::PrintStyledContent(
             msg .with(Color::White)
                 .on  (Color::Black)
         )
     )?;
 
+    let total_size = so.buffer().len();
+
     so.flush()?;
 
-    Ok(())
+    Ok(total_size)
 }
 
 struct RLEChunk {
     n: usize,
-    d: (bool, bool)
+    d: (u8, u8)
 }
-fn rle_row(src: &[Vec<bool>]) -> Vec<RLEChunk> {
+fn rle_row(src: &[Vec<u8>]) -> Vec<RLEChunk> {
     let mut ic_at = 0;
     let mut ichunks = Vec::with_capacity(src[0].len());
     let mut fchunks = Vec::new();
@@ -94,25 +89,43 @@ fn rle_row(src: &[Vec<bool>]) -> Vec<RLEChunk> {
         } else {
             ichunks.push(RLEChunk {
                 n: 1,
-                d: (src[0][i], false)
+                d: (src[0][i], 0)
             })
         }
     }
     let mut n = 0;
     let mut d = ichunks[0].d;
+    let mut acc_d = (0, 0);
     while let Some(this) = next(&ichunks, &mut ic_at) {
-        if this.d == d {
+        let diff_0 = this.d.0.abs_diff(d.0);
+        let diff_1 = this.d.1.abs_diff(d.1);
+        if diff_0 <= crate::COMPRESSION_DIFF &&
+           diff_1 <= crate::COMPRESSION_DIFF {
             n += 1;
+            acc_d.0 += this.d.0 as usize;
+            acc_d.1 += this.d.1 as usize;
         } else {
             fchunks.push(RLEChunk {
-                n, d
+                n,
+                d: (
+                    (acc_d.0 / n) as u8,
+                    (acc_d.1 / n) as u8,
+                )
             });
             n = 1;
             d = this.d;
+            acc_d = (
+                this.d.0 as usize,
+                this.d.1 as usize,
+            );
         }
     }
     fchunks.push(RLEChunk {
-        n, d
+        n,
+        d: (
+            (acc_d.0 / n) as u8,
+            (acc_d.1 / n) as u8,
+            )
     });
     fchunks
 }
@@ -135,7 +148,7 @@ pub fn show(s: &str) -> core::result::Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn handle_input(el: Duration, state: &mut crate::renderer::State) -> core::result::Result<(), Box<dyn std::error::Error>> {
+pub fn handle_input(el: Duration, state: &mut crate::renderer::State) -> std::result::Result<Option<usize>, Box<dyn std::error::Error>> {
     let pr = poll(
         Duration::from_millis(
             ((1000.0 / crate::MAX_FPS) as u128).checked_sub(el.as_millis()).unwrap_or(0) as u64
@@ -143,6 +156,11 @@ pub fn handle_input(el: Duration, state: &mut crate::renderer::State) -> core::r
     )?;
     if pr {
         match read()? {
+            Event::Resize(c, r) => {
+                let so = unsafe { &mut *STDOUT_BUF };
+                execute!(so, terminal::Clear(terminal::ClearType::All))?;
+                return Ok(Some(c.min((r-2) << 1) as usize));
+            },
             Event::Key(KeyEvent { code: KeyCode::Esc, .. }) => {
                 unsafe {
                     let mut s = String::new();
@@ -160,9 +178,15 @@ pub fn handle_input(el: Duration, state: &mut crate::renderer::State) -> core::r
             Event::Key(KeyEvent { code: KeyCode::Char('r'), kind: KeyEventKind::Press, .. }) => {
                 state.toggle_rotate ^= true;
             },
+            Event::Key(KeyEvent { code: KeyCode::Char('w'), kind: KeyEventKind::Press, .. }) => state.p.z += 0.25,
+            Event::Key(KeyEvent { code: KeyCode::Char('s'), kind: KeyEventKind::Press, .. }) => state.p.z -= 0.25,
+            Event::Key(KeyEvent { code: KeyCode::Char('d'), kind: KeyEventKind::Press, .. }) => state.p.x += 0.25,
+            Event::Key(KeyEvent { code: KeyCode::Char('a'), kind: KeyEventKind::Press, .. }) => state.p.x -= 0.25,
+            Event::Key(KeyEvent { code: KeyCode::Char('q'), kind: KeyEventKind::Press, .. }) => state.p.y += 0.25,
+            Event::Key(KeyEvent { code: KeyCode::Char('e'), kind: KeyEventKind::Press, .. }) => state.p.y -= 0.25,
             _ => ()
         }
     }
 
-    Ok(())
+    Ok(None)
 }
