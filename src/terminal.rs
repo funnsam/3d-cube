@@ -48,8 +48,8 @@ pub fn push_image(image: Vec<Vec<u8>>, msg: &str) -> core::result::Result<usize,
             queue!(so,
                 style::PrintStyledContent(
                     "\u{2580}".repeat(i.n)
-                        .with(Color::Rgb { r: 0, g: i.d.0 / 2, b: i.d.0 })
-                        .on  (Color::Rgb { r: 0, g: i.d.1 / 2, b: i.d.1 })
+                        .with(Color::Rgb { r: i.d.0, g: i.d.0, b: i.d.0 })
+                        .on  (Color::Rgb { r: i.d.1, g: i.d.1, b: i.d.1 })
                 )
             )?;
         }

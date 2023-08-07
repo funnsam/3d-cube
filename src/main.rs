@@ -33,7 +33,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         size = terminal::handle_input(s.elapsed()?, &mut state)?.unwrap_or(size);
 
         let total = s.elapsed()?.as_nanos() as f64 / 1e+6;
-        fps = 1000.0 / total;
+        fps = (fps + 1000.0 / total) / 2.0;
 
         if state.toggle_rotate {
             state.r += (std::f32::consts::TAU * 0.25) * (total as f32 / 1000.0);
