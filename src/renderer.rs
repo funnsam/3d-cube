@@ -156,7 +156,6 @@ pub fn render(state: &mut State, size: usize) -> Vec<Vec<u8>> {
         let mut e = 2 * dy - dx;
         let a = 2 * dy;
         let b = 2 * dy - 2 * dx;
-        plot(&mut screen, size, x, y, ((1.0-(v1.d / 10.0).min(0.5)) * 255.0) as u8);
         for i in 0..dx {
             if e < 0 {
                 if interchange {
@@ -170,6 +169,7 @@ pub fn render(state: &mut State, size: usize) -> Vec<Vec<u8>> {
                 x += s1;
                 e += b;
             }
+
             let i = i as f32 / dx as f32;
             let l = v1.d * (1.0 - i) + v2.d * i;
             plot(&mut screen, size, x, y, ((1.0-(l / 10.0).min(0.5)) * 255.0) as u8);

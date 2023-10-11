@@ -3,12 +3,11 @@
 use std::time::SystemTime;
 use std::io::*;
 
-pub const STDOUT_BUF_SIZE: usize = 96*KB;
+pub const STDOUT_BUF_SIZE: usize = 128*KB;
 pub const COMPRESSION_DIFF: u8 = 16;
 pub const MAX_FPS: f64 = 60.0;
 pub const FOV: f32 = 70.0;
 
-const MB: usize = KB * 1024;
 const KB: usize = 1024;
 
 mod terminal;
